@@ -35,6 +35,21 @@ class VisualGridHuntGame:
             if tuple(op_pos) != (0, 0) and tuple(op_pos) not in self.walls and tuple(op_pos) not in self.food_positions:
                 self.opponents.append(op_pos)
 
+        #Generate toxic traps
+        self.toxic_traps = set()
+        while len(self.toxic_traps) < 5:
+            tx = random.randint(0, self.width - 1)
+            ty = random.randint(0, self.height - 1)
+            trap_pos = (tx, ty)
+
+            if (
+                trap_pos != (0, 0)
+                and trap_pos not in self.walls
+                and trap_pos not in self.food_positions
+                and trap_pos not in {tuple(op) for op in self.opponents}
+            ):
+                self.toxic_traps.add(trap_pos)
+
         self.score = 0
         self.steps = 0
         self.collision = False
@@ -47,7 +62,8 @@ class VisualGridHuntGame:
             'hit_wall': tuple(self.agent_pos) in self.walls,
             'collision': self.collision,
             'score': self.score,
-            'remaining_food': len(self.food_positions)
+            'remaining_food': len(self.food_positions),
+            'smells_toxin' : tuple(self.agent_pos) in self.toxic_traps
         }
 
     def execute_action(self, action: str):
@@ -72,6 +88,9 @@ class VisualGridHuntGame:
         if tuple_pos in self.food_positions:
             self.food_positions.remove(tuple_pos)
             self.score += 20
+
+        if tuple_pos in self.toxic_traps:
+            self.score -= 15
 
         for op in self.opponents:
             move = random.choice(['Up', 'Down', 'Left', 'Right', 'Stay'])
@@ -159,6 +178,19 @@ class GridGameGUI:
         y1 = (self.env.height - 1 - ay) * self.cell_size + offset
         self.canvas.create_oval(x1, y1, x1 + self.cell_size * 0.7, y1 + self.cell_size * 0.7, fill="#000066",
                                 outline="#1e3a8a")
+
+        for tx, ty in self.env.toxic_traps:
+            cx = tx * self.cell_size + self.cell_size / 2
+            cy = (self.env.height - 1 - ty) * self.cell_size + self.cell_size / 2
+            r = self.cell_size * 0.3
+
+            self.canvas.create_polygon(
+                cx, cy -r,
+                cx + r, cy,
+                cx - r, cy,
+                fill="#800080",
+                outline="#4B0082"
+            )
 
     def run_loop(self):
         self.btn.config(state="disabled")
