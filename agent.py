@@ -3,6 +3,7 @@
 from collections import deque
 import heapq
 import random
+import math
 
 
 class GreedyGridAgent:
@@ -12,22 +13,33 @@ class GreedyGridAgent:
         self.actions_pool = ['Up', 'Down', 'Left', 'Right']
 
     def sense_and_act(self, percept: dict) -> str:
-        # If standing directly on food, or just wander / move towards coordinates
-        pos = percept['agent_pos']
-
         # Simple heuristic or fallback random sweep
         return random.choice(self.actions_pool)
 
 
 class SearchAgent:
-    """Agent that uses uninformed search algorithms."""
+    """Agent that uses uninformed and informed search algorithms."""
 
     def __init__(self):
         self.actions = ['Up', 'Down', 'Left', 'Right']
 
         # Step 1.3: Offline planning
         self.plan = []
-        self.active_algo = 'BFS'
+
+        # Use A* as the active search algorithm
+        self.active_algo = 'AStar'
+
+
+    def manhattan_distance(self, pos, goal):
+        """Calculate Manhattan distance between two positions."""
+        return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+    def euclidean_distance(self, pos, goal):
+        """Calculate Euclidean distance between two positions."""
+        return math.sqrt(
+            (pos[0] - goal[0]) ** 2 +
+            (pos[1] - goal[1]) ** 2
+        )
 
     def get_neighbors(self, state, walls, grid_size):
         """Return valid neighboring states and their actions."""
@@ -72,7 +84,9 @@ class SearchAgent:
                 return path
 
             for neighbor, action in self.get_neighbors(
-                current, walls, grid_size
+                current,
+                walls,
+                grid_size
             ):
                 if neighbor not in reached:
                     reached.add(neighbor)
@@ -95,7 +109,9 @@ class SearchAgent:
                 return path
 
             for neighbor, action in self.get_neighbors(
-                current, walls, grid_size
+                current,
+                walls,
+                grid_size
             ):
                 if neighbor not in reached:
                     reached.add(neighbor)
@@ -104,6 +120,7 @@ class SearchAgent:
                     frontier.append((neighbor, new_path))
 
         return []
+
 
     def ucs_search(self, start, goal, walls, grid_size):
         """Uniform-Cost Search using a priority queue."""
@@ -118,7 +135,9 @@ class SearchAgent:
                 return path
 
             for neighbor, action in self.get_neighbors(
-                current, walls, grid_size
+                current,
+                walls,
+                grid_size
             ):
                 new_cost = cost + 1
 
@@ -134,20 +153,151 @@ class SearchAgent:
 
         return []
 
+
+    def astar_search(
+        self,
+        start_pos,
+        goal_pos,
+        walls,
+        grid_size,
+        heuristic_type='manhattan'
+    ):
+        """
+        A* Search using:
+
+            f(n) = g(n) + h(n)
+
+        g(n): cost from the start node to the current node
+        h(n): estimated cost from the current node to the goal
+        f(n): estimated total cost
+        """
+
+        # Priority queue
+        frontier = []
+
+        # Set of explored states
+        reached_states = set()
+
+        # Calculate heuristic for the starting position
+        if heuristic_type == 'manhattan':
+            h_cost = self.manhattan_distance(
+                start_pos,
+                goal_pos
+            )
+
+        elif heuristic_type == 'euclidean':
+            h_cost = self.euclidean_distance(
+                start_pos,
+                goal_pos
+            )
+
+        else:
+            raise ValueError(
+                f"Unknown heuristic type: {heuristic_type}"
+            )
+
+        # Starting node has g(n) = 0
+        g_cost = 0
+
+        # f(n) = g(n) + h(n)
+        f_cost = g_cost + h_cost
+
+        # A* priority queue tuple:
+        # (f_cost, g_cost, current_pos, path_taken)
+        heapq.heappush(
+            frontier,
+            (
+                f_cost,
+                g_cost,
+                start_pos,
+                []
+            )
+        )
+
+        # Main A* loop
+        while frontier:
+
+            # Pop the node with the lowest f(n)
+            f_cost, g_cost, current_pos, path_taken = heapq.heappop(
+                frontier
+            )
+
+            # Goal test
+            if current_pos == goal_pos:
+                return path_taken
+
+            # Skip states that have already been explored
+            if current_pos in reached_states:
+                continue
+
+            # Mark current state as explored
+            reached_states.add(current_pos)
+
+            # Expand neighboring states
+            for neighbor, action in self.get_neighbors(
+                current_pos,
+                walls,
+                grid_size
+            ):
+                # Ignore already explored states
+                if neighbor in reached_states:
+                    continue
+
+                # Calculate g(new)
+                new_g_cost = g_cost + 1
+
+                # Calculate h(new)
+                if heuristic_type == 'manhattan':
+                    new_h_cost = self.manhattan_distance(
+                        neighbor,
+                        goal_pos
+                    )
+                else:
+                    new_h_cost = self.euclidean_distance(
+                        neighbor,
+                        goal_pos
+                    )
+
+                # Calculate f(new)
+                new_f_cost = new_g_cost + new_h_cost
+
+                # Create new path
+                new_path = path_taken + [action]
+
+                # Add node to priority queue
+                heapq.heappush(
+                    frontier,
+                    (
+                        new_f_cost,
+                        new_g_cost,
+                        neighbor,
+                        new_path
+                    )
+                )
+
+        # No path found
+        return []
+
+
     def sense_and_act(self, percept: dict) -> str:
         """Create an offline plan and execute it one action at a time."""
 
         # Create a new plan if the current plan is empty
         if not self.plan:
 
+            # Current agent position
             start = tuple(percept['agent_pos'])
+
+            # Get all remaining food
             food_positions = percept['all_food']
 
+            # Convert wall positions to tuples
             walls = {
                 tuple(wall)
                 for wall in percept['walls']
             }
 
+            # Get grid size
             grid_size = percept['grid_size']
 
             # No food remaining
@@ -164,7 +314,7 @@ class SearchAgent:
 
             goal = tuple(goal)
 
-            # Run the selected search algorithm
+            # Select the search algorithm
             if self.active_algo == 'BFS':
                 self.plan = self.bfs_search(
                     start,
@@ -189,6 +339,15 @@ class SearchAgent:
                     grid_size
                 )
 
+            elif self.active_algo == 'AStar':
+                self.plan = self.astar_search(
+                    start_pos=start,
+                    goal_pos=goal,
+                    walls=walls,
+                    grid_size=grid_size,
+                    heuristic_type='manhattan'
+                )
+
             else:
                 raise ValueError(
                     f"Unknown search algorithm: {self.active_algo}"
@@ -200,3 +359,13 @@ class SearchAgent:
 
         # No path found
         return 'Stay'
+
+
+if __name__ == "__main__":
+    agent = SearchAgent()
+
+    start = (0, 0)
+    goal = (3, 4)
+
+    print("Manhattan:", agent.manhattan_distance(start, goal))
+    print("Euclidean:", agent.euclidean_distance(start, goal))
